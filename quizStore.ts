@@ -1,310 +1,265 @@
 import { create } from 'zustand';
-import {
-  AttemptEvent,
-  ConceptGraphItem,
-  ConceptState,
-  Question,
-} from './types';
+import { AttemptEvent, ConceptGraphItem, ConceptState, Difficulty, Question } from './types';
 import {
   suggestDifficulty,
   processAttempt,
   validateGraph,
+  getReport,
+  MISCONCEPTION_SELF,
+  ReportResult,
 } from './engine';
 import questionsData from './questions.json';
-import conceptGraphData from './concept.json';
+import conceptData from './concept.json';
 
-const questions: Question[] = questionsData as unknown as Question[];
-const conceptGraph: ConceptGraphItem[] = conceptGraphData as unknown as ConceptGraphItem[];
+export const CHAPTER = 'Electricity';
+const STUDENT_ID = 'student-1';
+const DEEP_DIVE_SIZE = 3;
+const DIFF_ORDER: Record<Difficulty, number> = { easy: 0, medium: 1, hard: 2 };
 
-validateGraph(conceptGraph);
+// concept.json uses ID / Instance name / Prerequisites, so normalize it.
+export const conceptGraph: ConceptGraphItem[] = (conceptData as any[]).map((c) => ({
+  id: c.ID ?? c.id,
+  name: c['Instance name'] ?? c.name,
+  prerequisites: c.Prerequisites ?? c.prerequisites ?? [],
+}));
+const validIds = new Set(conceptGraph.map((c) => c.id));
+export const allQuestions: Question[] = (questionsData as unknown as Question[]).filter((q) =>
+  validIds.has(q.concept_id)
+);
+console.log('questions loaded:', allQuestions.length, 'of', (questionsData as any[]).length);
+
+export const conceptName = (id: string | null) =>
+  conceptGraph.find((c) => c.id === id)?.name ?? id ?? '';
+
+const sKey = (conceptId: string) => `${STUDENT_ID}:${conceptId}`;
+
+export interface StrugglePoint {
+  id: string;
+  conceptId: string;
+  rootGapConcept: string | null;
+  reason: string;
+  timestamp: number;
+}
+
+type View = 'setup' | 'quiz' | 'why' | 'report';
 
 interface QuizState {
-  // Setup
-  chapter: string;
+  view: View;
   quizLength: 5 | 10 | 15;
   setQuizLength: (len: 5 | 10 | 15) => void;
-  setChapter: (chapter) => void;
 
-  // Lifecycle
-  view: 'setup' | 'quiz' | 'deepDive' | 'loopBreak';
-  startQuiz: () => void;
-  resetQuiz: () => void;
+  pool: Question[];
+  usedIds: string[];
+  currentQuestion: Question | null;
+  questionStartedAt: number;
+  mainAnswered: number;
+  deepAnswered: number;
 
-  // Quiz data
-  questions: Question[];
-  currentQuestionIndex: number;
-  totalQuestions: number;
-
-  // Selections
   selectedAnswer: string | null;
   selectedConfidence: 'sure' | 'not_sure' | null;
   selectAnswer: (option: string) => void;
-  selectConfidence: (conf: 'sure' | 'not_sure') => void;
-  clearSelections: () => void;
+  selectConfidence: (c: 'sure' | 'not_sure') => void;
 
-  // Engine integration
-  currentDifficulty: 'easy' | 'medium' | 'hard';
+  currentDifficulty: Difficulty;
   studentStates: Record<string, ConceptState>;
-  loopFlag: boolean;
-  rootGap: string | null;
-  isDeepDive: boolean;
-  isLoopBreak: boolean;
-  strugglePoints: Array<{
-    conceptId: string;
-    rootGapConcept: string | null;
-    reason: string;
-    timeSpentMs: number;
-    timestamp: number;
-    studentId: string;
-  }>;
+
+  pendingLoop: { conceptId: string; rootGap: string | null; wrongOption: string } | null;
+  inDeepDive: boolean;
+  deepQueue: Question[];
+  deepDiveTarget: string | null;
+  strugglePoints: StrugglePoint[];
+
+  startQuiz: (focusConceptIds?: string[]) => void;
   submitAnswer: () => void;
-  recordStrugglePoint: (reason: string, timeSpentMs?: number) => void;
-  completeLoopBreak: () => void;
+  submitWhy: (reason: string) => void;
+  advance: () => void;
+  resetQuiz: () => void;
+  getReportData: () => ReportResult;
 }
 
-/**
- * Maps option letters to human-friendly misconception descriptions
- * based on the misconceptions stored in questions.json
- */
-function getMisconceptionReasons(
-  conceptId: string,
-  selectedOption: string
-): Array<{ label: string; value: string }> {
-  const sourceQuestion = questionsData.find(
-    (q: any) => q.concept_id === conceptId
-  );
-  if (!sourceQuestion?.misconceptions) {
-    return [
-      { label: 'Calculation error', value: 'Calculation error' },
-      { label: 'Misunderstood formula', value: 'Misunderstood formula' },
-      { label: 'Confused terms', value: 'Confused terms' },
-      { label: 'Other', value: 'Other' },
-    ];
-  }
-
-  const optionMisconceptions = sourceQuestion.misconceptions;
-  const reason = optionMisconceptions[selectedOption as keyof typeof optionMisconceptions];
-
-  if (reason) {
-    // Return the specific misconception plus fallback options
-    return [
-      { label: reason, value: reason },
-      { label: 'Calculation error', value: 'Calculation error' },
-      { label: 'Misunderstood formula', value: 'Misunderstood formula' },
-      { label: 'Confused terms', value: 'Confused terms' },
-      { label: 'Other', value: 'Other' },
-    ];
-  }
-
-  // Generic fallbacks
-  return [
-    { label: 'Calculation error', value: 'Calculation error' },
-    { label: 'Misunderstood formula', value: 'Misunderstood formula' },
-    { label: 'Confused terms', value: 'Confused terms' },
-    { label: 'Other', value: 'Other' },
-  ];
+function pickNext(
+  pool: Question[],
+  usedIds: string[],
+  difficulty: Difficulty,
+  states: Record<string, ConceptState>
+): Question | null {
+  const unused = pool.filter((q) => !usedIds.includes(q.id));
+  if (unused.length === 0) return null;
+  const attemptsOf = (q: Question) => states[sKey(q.concept_id)]?.attempts ?? 0;
+  const sameDiff = unused.filter((q) => q.difficulty === difficulty);
+  const candidates = sameDiff.length ? sameDiff : unused;
+  const min = Math.min(...candidates.map(attemptsOf));
+  const least = candidates.filter((q) => attemptsOf(q) === min);
+  return least[Math.floor(Math.random() * least.length)];
 }
 
-const initialStudentId = 'student-1';
+const freshState = {
+  view: 'setup' as View,
+  pool: [] as Question[],
+  usedIds: [] as string[],
+  currentQuestion: null as Question | null,
+  questionStartedAt: 0,
+  mainAnswered: 0,
+  deepAnswered: 0,
+  selectedAnswer: null as string | null,
+  selectedConfidence: null as 'sure' | 'not_sure' | null,
+  currentDifficulty: 'medium' as Difficulty,
+  studentStates: {} as Record<string, ConceptState>,
+  pendingLoop: null,
+  inDeepDive: false,
+  deepQueue: [] as Question[],
+  deepDiveTarget: null as string | null,
+  strugglePoints: [] as StrugglePoint[],
+};
 
 export const useQuizStore = create<QuizState>((set, get) => ({
-  // Setup
-  chapter: 'Electricity',
+  ...freshState,
   quizLength: 10,
   setQuizLength: (len) => set({ quizLength: len }),
-  setChapter: (chapter) => set({ chapter }),
 
-  // Lifecycle
-  view: 'setup',
-  startQuiz: () => {
-    const { quizLength } = get();
-    const shuffled = [...questions].sort(() => 0.5 - Math.random());
-    set({
-      view: 'quiz',
-      questions: shuffled.slice(0, quizLength),
-      currentQuestionIndex: 0,
-      totalQuestions: quizLength,
-      selectedAnswer: null,
-      selectedConfidence: null,
-      currentDifficulty: 'medium',
-      studentStates: {},
-      loopFlag: false,
-      rootGap: null,
-      isDeepDive: false,
-      isLoopBreak: false,
-      strugglePoints: [],
-    });
-  },
-  resetQuiz: () => {
-    set({
-      view: 'setup',
-      questions: [],
-      currentQuestionIndex: 0,
-      totalQuestions: 0,
-      selectedAnswer: null,
-      selectedConfidence: null,
-      currentDifficulty: 'medium',
-      studentStates: {},
-      loopFlag: false,
-      rootGap: null,
-      isDeepDive: false,
-      isLoopBreak: false,
-      strugglePoints: [],
-    });
-  },
-
-  // Quiz data
-  questions: [],
-  currentQuestionIndex: 0,
-  totalQuestions: 0,
-
-  // Selections
-  selectedAnswer: null,
-  selectedConfidence: null,
   selectAnswer: (option) => set({ selectedAnswer: option }),
-  selectConfidence: (conf) => set({ selectedConfidence: conf }),
-  clearSelections: () =>
-    set({ selectedAnswer: null, selectedConfidence: null }),
+  selectConfidence: (c) => set({ selectedConfidence: c }),
 
-  // Engine integration
-  currentDifficulty: 'medium',
-  studentStates: {},
-  loopFlag: false,
-  rootGap: null,
-  isDeepDive: false,
-  isLoopBreak: false,
-  strugglePoints: [],
+  startQuiz: (focusConceptIds) => {
+    let pool = allQuestions;
+    if (focusConceptIds && focusConceptIds.length) {
+      const focused = allQuestions.filter((q) => focusConceptIds.includes(q.concept_id));
+      if (focused.length) pool = focused;
+    }
+    const first = pickNext(pool, [], 'medium', {});
+    set({
+      ...freshState,
+      pool,
+      view: first ? 'quiz' : 'setup',
+      currentQuestion: first,
+      usedIds: first ? [first.id] : [],
+      questionStartedAt: Date.now(),
+    });
+  },
+
   submitAnswer: () => {
-    const {
-      studentStates,
-      currentQuestionIndex,
-      questions,
-      currentDifficulty,
-      selectedAnswer,
-      selectedConfidence,
-      loopFlag,
-      isLoopBreak,
-      strugglePoints,
-    } = get();
+    const s = get();
+    const q = s.currentQuestion;
+    if (!q || !s.selectedAnswer || !s.selectedConfidence) return;
 
-    if (!selectedAnswer || !selectedConfidence) return;
-
-    const currentQuestion = questions[currentQuestionIndex];
+    const correct = s.selectedAnswer === q.correct_option;
     const event: AttemptEvent = {
-      student_id: initialStudentId,
-      question_id: currentQuestion.id,
-      concept_id: currentQuestion.concept_id,
-      difficulty: currentDifficulty,
-      correct: selectedAnswer === 'A', // placeholder
-      confidence: selectedConfidence,
+      student_id: STUDENT_ID,
+      question_id: q.id,
+      concept_id: q.concept_id,
+      difficulty: q.difficulty,
+      correct,
+      confidence: s.selectedConfidence,
+      time_ms: Date.now() - s.questionStartedAt,
       timestamp: Date.now(),
     };
 
-    // Determine correctness from the question data
-    const sourceQuestion = questionsData.find(
-      (q: any) => q.id === currentQuestion.id
-    );
-    event.correct = selectedAnswer === (sourceQuestion?.correct_option ?? 'A');
-
-    const stateMap: Record<string, ConceptState> = studentStates;
-    const map = new Map<string, ConceptState>();
-    for (const [k, v] of Object.entries(stateMap)) {
-      map.set(k, v);
-    }
-
+    const map = new Map<string, ConceptState>(Object.entries(s.studentStates));
     const result = processAttempt(map, event, conceptGraph);
+    const states = Object.fromEntries(result.newStateMap) as Record<string, ConceptState>;
+    const conceptState = result.newStateMap.get(sKey(q.concept_id))!;
 
-    // *** LOOP BREAKER INTEGRATION ***
-    // Check if a loop was triggered
-    const newLoopFlag = result.loopFlag || isLoopBreak;
-    const newStrugglePoints = [...strugglePoints];
+    const base = {
+      studentStates: states,
+      currentDifficulty: suggestDifficulty(conceptState, s.currentDifficulty),
+      mainAnswered: s.mainAnswered + (s.inDeepDive ? 0 : 1),
+      deepAnswered: s.deepAnswered + (s.inDeepDive ? 1 : 0),
+      selectedAnswer: null,
+      selectedConfidence: null,
+    };
 
-    if (newLoopFlag && !isLoopBreak) {
-      // Enter loop break mode - pause the quiz length counter
-      // The questions answered during loop break won't count toward quiz length
+    if (result.loopFlag && !s.inDeepDive) {
       set({
-        loopFlag: newLoopFlag,
-        rootGap: result.rootGap,
-        isLoopBreak: true,
-        isDeepDive: false,
-        // Keep current selections but mark as in-loop-break
-        selectedAnswer: selectedAnswer,
-        selectedConfidence: selectedConfidence,
+        ...base,
+        view: 'why',
+        pendingLoop: {
+          conceptId: q.concept_id,
+          rootGap: result.rootGap,
+          wrongOption: s.selectedAnswer,
+        },
       });
-
-      // Record a struggle point immediately upon loop entry
-      const misconceptionReasons = getMisconceptionReasons(
-        currentQuestion.concept_id,
-        selectedAnswer
-      );
-      newStrugglePoints.push({
-        conceptId: currentQuestion.concept_id,
-        rootGapConcept: result.rootGap,
-        reason: misconceptionReasons[0]?.label || 'Misunderstood formula',
-        timeSpentMs: 0, // Will be updated when loop break completes
-        timestamp: Date.now(),
-        studentId: initialStudentId,
-      });
+      return;
     }
-
-    // Update student states from engine
-    const newStudentStates: Record<string, ConceptState> = {};
-    result.newStateMap.forEach((v, k) => {
-      newStudentStates[k] = v;
-    });
-
-    const nextDifficulty = suggestDifficulty(
-      result.newStateMap.get(`${initialStudentId}:${currentQuestion.concept_id}`)!,
-      currentDifficulty
-    );
-
-    set({
-      studentStates: newStudentStates,
-      loopFlag: newLoopFlag,
-      rootGap: result.rootGap,
-      currentDifficulty: nextDifficulty,
-    });
-
-    // If we're in loop break mode, stay on same question, don't advance
-    let nextIndex = currentQuestionIndex;
-    if (!isLoopBreak && !newLoopFlag) {
-      // Normal advancement
-      nextIndex = currentQuestionIndex + 1;
-    }
-    // If loopBreak is true, we stay on the same question index
-
-    if (nextIndex < questions.length) {
-      set({
-        currentQuestionIndex: nextIndex,
-        selectedAnswer: null,
-        selectedConfidence: null,
-        // isLoopBreak remains true until completedLoopBreak is called
-      });
-    } else if (nextIndex >= questions.length && !isLoopBreak) {
-      set({ view: 'deepDive' });
-    }
-    // If loopBreak and at end, stay in loopBreak view
-
-    return { newStateMap: map, loopFlag: newLoopFlag, rootGap: result.rootGap };
+    set(base);
+    get().advance();
   },
 
-  // *** RECORD STRUGGLE POINT ***
-  recordStrugglePoint: (reason: string, timeSpentMs?: number) =>
-    set((state) => {
-      const newStrugglePoints = [...state.strugglePoints, {
-        conceptId: state.rootGap || 'unknown',
-        rootGapConcept: state.rootGap,
-        reason,
-        timeSpentMs: timeSpentMs || 0,
-        timestamp: Date.now(),
-        studentId: initialStudentId,
-      }];
-      return { strugglePoints: newStrugglePoints };
-    }),
+  submitWhy: (reason) => {
+    const s = get();
+    const p = s.pendingLoop;
+    if (!p) return;
 
-  // *** COMPLETE LOOP BREAK ***
-  completeLoopBreak: () => set({ isLoopBreak: false, loopFlag: false }),
+    const target =
+      p.rootGap && p.rootGap !== MISCONCEPTION_SELF ? p.rootGap : p.conceptId;
+    const pickFor = (conceptId: string) =>
+      allQuestions
+        .filter((q) => q.concept_id === conceptId && !s.usedIds.includes(q.id))
+        .sort((a, b) => DIFF_ORDER[a.difficulty] - DIFF_ORDER[b.difficulty])
+        .slice(0, DEEP_DIVE_SIZE);
 
-  // Deep dive
-  isDeepDive: false,
+    let picks = pickFor(target);
+    let usedTarget = target;
+    if (picks.length === 0 && target !== p.conceptId) {
+      picks = pickFor(p.conceptId);
+      usedTarget = p.conceptId;
+    }
+
+    set({
+      strugglePoints: [
+        ...s.strugglePoints,
+        {
+          id: `sp_${Date.now()}`,
+          conceptId: p.conceptId,
+          rootGapConcept: p.rootGap && p.rootGap !== MISCONCEPTION_SELF ? p.rootGap : null,
+          reason,
+          timestamp: Date.now(),
+        },
+      ],
+      pendingLoop: null,
+      inDeepDive: picks.length > 0,
+      deepQueue: picks,
+      deepDiveTarget: picks.length > 0 ? usedTarget : null,
+    });
+    get().advance();
+  },
+
+  advance: () => {
+    const s = get();
+    if (s.inDeepDive && s.deepQueue.length > 0) {
+      const [next, ...rest] = s.deepQueue;
+      set({
+        view: 'quiz',
+        currentQuestion: next,
+        deepQueue: rest,
+        usedIds: [...s.usedIds, next.id],
+        questionStartedAt: Date.now(),
+      });
+      return;
+    }
+    if (s.mainAnswered >= s.quizLength) {
+      set({ view: 'report', inDeepDive: false, deepDiveTarget: null, currentQuestion: null });
+      return;
+    }
+    const next = pickNext(s.pool, s.usedIds, s.currentDifficulty, s.studentStates);
+    if (!next) {
+      set({ view: 'report', inDeepDive: false, deepDiveTarget: null, currentQuestion: null });
+      return;
+    }
+    set({
+      view: 'quiz',
+      inDeepDive: false,
+      deepDiveTarget: null,
+      currentQuestion: next,
+      usedIds: [...s.usedIds, next.id],
+      questionStartedAt: Date.now(),
+    });
+  },
+
+  resetQuiz: () => set({ ...freshState }),
+
+  getReportData: () => {
+    const s = get();
+    const map = new Map<string, ConceptState>(Object.entries(s.studentStates));
+    return getReport(map, conceptGraph, s.mainAnswered, STUDENT_ID, CHAPTER);
+  },
 }));

@@ -1,4 +1,5 @@
-import { CycleError } from './types';
+export type Difficulty = 'easy' | 'medium' | 'hard';
+export type Confidence = 'sure' | 'not_sure';
 
 export interface ConceptGraphItem {
   id: string;
@@ -9,16 +10,20 @@ export interface ConceptGraphItem {
 export interface Question {
   id: string;
   concept_id: string;
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: Difficulty;
+  question_text: string;
+  options: Record<string, string>;
+  correct_option: string;
+  misconceptions?: Record<string, string>;
 }
 
 export interface AttemptEvent {
   student_id: string;
   question_id: string;
   concept_id: string;
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: Difficulty;
   correct: boolean;
-  confidence: 'sure' | 'not_sure';
+  confidence: Confidence;
   time_ms?: number;
   timestamp: number;
 }

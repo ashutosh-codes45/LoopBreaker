@@ -1,6 +1,6 @@
 import React from 'react';
 import { ConceptState, ConceptGraphItem } from './types';
-import { ReportResult, ReportItem } from './engine';
+import { ReportResult } from './engine';
 
 interface SessionData {
   studentId: string;
@@ -39,7 +39,7 @@ const ReportDashboard: React.FC<ReportDashboardProps> = ({
 
   // Build a map from concept ID to display name for quick lookup
   const conceptNameMap = new Map<string, string>();
-  conceptGraph.forEach(item => conceptNameMap.set(item.id, item['Instance name']));
+     conceptGraph.forEach(item => conceptNameMap.set(item.id, item.name));
 
   // Helper to get concept display name
   const getConceptName = (conceptId: string): string => {
@@ -71,7 +71,7 @@ const ReportDashboard: React.FC<ReportDashboardProps> = ({
   });
 
   // Sort concepts by priority: misconceptions first, then by mastery level
-  const sortByPriority = (states: ConceptState[]): ConceptState[] => {
+    const sortByPriority = <T extends ConceptState>(states: T[]): T[] => {
     const isMisconceptionPriority = report.priority === 'misconception';
     return states.sort((a, b) => {
       // Misconception priority first
@@ -124,12 +124,11 @@ const ReportDashboard: React.FC<ReportDashboardProps> = ({
             <div className="text-xl font-medium text-gray-700">
               Total Questions Answered: {totalQuestionsAnswered}
             </div>
-            <div className={earlyEstimate ? 'text-amber-600 font-semibold' : 'text-gray-600 text-sm'}>
-              {' '}
-              <span className="inline-block bg-amber-200 px-2 py-1 rounded">
-                Early Estimate Flag: Small sample size (< 10 main questions)
-              </span>
-            </div>
+            {earlyEstimate && (
+  <span className="inline-block bg-amber-200 text-amber-900 px-2 py-1 rounded text-sm">
+    Early estimate: fewer than 10 main questions
+  </span>
+)}
           </div>
           
           {/* Concept Breakdown */}

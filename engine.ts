@@ -5,12 +5,17 @@ import {
   ConceptState,
   StudentStateMap,
   CycleError,
+  Difficulty,
+  Confidence,
 } from './types';
+
+export const MISCONCEPTION_SELF = 'misconception on this concept itself';
 
 export interface ProcessResult {
   newStateMap: StudentStateMap;
   loopFlag: boolean;
   rootGap: string | null;
+  reason: string;
 }
 
 export interface ReportItem {
@@ -36,129 +41,46 @@ const INITIAL_STATE: ConceptState = {
   status: 'unseen',
 };
 
-const PROCESSED_KEY = '__processed__';
-
-function cloneStateMap(map: StudentStateMap): StudentStateMap {
-  const result = new Map<string, ConceptState>();
-  for (const [key, state] of map.entries()) {
-    result.set(key, { ...state });
-  }
-  return result;
-}
-
-function mapKey(studentId: string, conceptId: string): string {
-  return `${studentId}:${conceptId}`;
-}
-
-function getOrCreateState(
-  map: StudentStateMap,
-  studentId: string,
-  conceptId: string
-): ConceptState {
-  const key = mapKey(studentId, conceptId);
-  const existing = map.get(key);
-  if (existing) return existing;
-  const initial = { ...INITIAL_STATE };
-  map.set(key, initial);
-  return initial;
-}
-
-function getProcessedQuestions(map: StudentStateMap, studentId: string): Set<string> {
-  const key = `${PROCESSED_KEY}:${studentId}`;
-  const val = map.get(key);
-  if (val && typeof val === 'string') {
-    // legacy fallback – shouldn't happen
-    return new Set(JSON.parse(val));
-  }
-  // We store processed sets under a special key conceptually, but since map values are ConceptState,
-  // we keep a parallel WeakMap instead.
-  return new Set();
-}
-
-// Since Map values are ConceptState only, we keep processed sets in a WeakMap for purity.
-const processedSets = new WeakMap<StudentStateMap, Map<string, Set<string>>>();
-
-function getProcessedSet(map: StudentStateMap, studentId: string): Set<string> {
-  let perStudent = processedSets.get(map);
-  if (!perStudent) {
-    perStudent = new Map();
-    processedSets.set(map, perStudent);
-  }
-  let set = perStudent.get(studentId);
-  if (!set) {
-    set = new Set();
-    perStudent.set(studentId, set);
-  }
-  return set;
-}
+const mapKey = (studentId: string, conceptId: string) => `${studentId}:${conceptId}`;
 
 function updateStatus(state: ConceptState): ConceptState {
-  const next: ConceptState = { ...state };
-  if (next.attempts === 0) {
-    next.status = 'unseen';
-  } else if (next.clean_streak >= 3 && next.p_mastery >= 0.8) {
-    next.status = 'understood';
-  } else if (next.p_mastery >= 0.4) {
-    next.status = 'shaky';
-  } else {
-    next.status = 'weak';
-  }
+  const next = { ...state };
+  if (next.attempts === 0) next.status = 'unseen';
+  else if (next.clean_streak >= 3 && next.p_mastery >= 0.8) next.status = 'understood';
+  else if (next.p_mastery >= 0.4) next.status = 'shaky';
+  else next.status = 'weak';
   return next;
 }
 
-/**
- * Detect cycles in a directed graph of concepts.
- * Throws CycleError if a cycle exists.
- */
+/** Throws CycleError if the prerequisite graph has a cycle. */
 export function validateGraph(graph: ConceptGraphItem[]): void {
   const visited = new Set<string>();
   const stack = new Set<string>();
   const adjacency = new Map<string, string[]>();
-  for (const item of graph) {
-    adjacency.set(item.id, item.prerequisites);
-  }
+  for (const item of graph) adjacency.set(item.id, item.prerequisites);
 
   function dfs(node: string): void {
     if (stack.has(node)) throw new CycleError(`Cycle detected at concept "${node}"`);
     if (visited.has(node)) return;
     visited.add(node);
     stack.add(node);
-    const deps = adjacency.get(node) ?? [];
-    for (const dep of deps) {
-      dfs(dep);
-    }
+    for (const dep of adjacency.get(node) ?? []) dfs(dep);
     stack.delete(node);
   }
-
-  for (const item of graph) {
-    dfs(item.id);
-  }
+  for (const item of graph) dfs(item.id);
 }
 
-/**
- * Get guess probability based on difficulty and confidence.
- */
-function getGuess(difficulty: 'easy' | 'medium' | 'hard', confidence: 'sure' | 'not_sure'): number {
+function getGuess(difficulty: Difficulty, confidence: Confidence): number {
   if (confidence === 'not_sure') return 0.5;
-  switch (difficulty) {
-    case 'easy': return CONFIG.guessEasy;
-    case 'medium': return CONFIG.guessMedium;
-    case 'hard': return CONFIG.guessHard;
-    default: return CONFIG.guessMedium;
-  }
+  if (difficulty === 'easy') return CONFIG.guessEasy;
+  if (difficulty === 'hard') return CONFIG.guessHard;
+  return CONFIG.guessMedium;
 }
 
-/**
- * Get slip probability based on correctness and confidence.
- */
-function getSlip(correct: boolean, confidence: 'sure' | 'not_sure'): number {
-  if (!correct && confidence === 'sure') return 0.05;
-  return CONFIG.slipDefault;
+function getSlip(correct: boolean, confidence: Confidence): number {
+  return !correct && confidence === 'sure' ? 0.05 : CONFIG.slipDefault;
 }
 
-/**
- * Core BKT-style update.
- */
 function bayesianUpdate(p: number, correct: boolean, guess: number, slip: number): number {
   const posterior = correct
     ? (p * (1 - slip)) / (p * (1 - slip) + (1 - p) * guess)
@@ -167,211 +89,162 @@ function bayesianUpdate(p: number, correct: boolean, guess: number, slip: number
   return Math.min(1, Math.max(0, learned));
 }
 
-/**
- * Process a single attempt event immutably.
- * Throws if confidence missing, concept unknown, or duplicate question in session.
- */
-export function processAttempt(
-  studentStateMap: StudentStateMap,
-  event: AttemptEvent,
-  graph: ConceptGraphItem[]
-): ProcessResult {
-  if (!event.confidence) throw new Error('confidence is missing in attempt event');
-
-  const conceptExists = graph.some((c) => c.id === event.concept_id);
-  if (!conceptExists) throw new Error(`Unknown concept ID: ${event.concept_id}`);
-
-  // Duplicate question detection per student
-  const processed = getProcessedSet(studentStateMap, event.student_id);
-  if (processed.has(event.question_id)) {
-    throw new Error(`Duplicate question ID "${event.question_id}" for student ${event.student_id}`);
-  }
-
-  const newMap = cloneStateMap(studentStateMap);
-
-  const state = getOrCreateState(newMap, event.student_id, event.concept_id);
-
-  const timeMs = event.time_ms ?? Infinity;
-  const isFast = timeMs < 3000;
-
-  const guess = getGuess(event.difficulty, event.confidence);
-  const slip = getSlip(event.correct, event.confidence);
-
-  const posterior = bayesianUpdate(state.p_mastery, event.correct, guess, slip);
-
-  // Apply fast-answer discount (halve mastery gain)
-  const nextP = isFast ? state.p_mastery + (posterior - state.p_mastery) * 0.5 : posterior;
-
-  const nextState: ConceptState = {
-    ...state,
-    p_mastery: nextP,
-    attempts: state.attempts + 1,
-    last_seen: event.timestamp,
-  };
-
-  if (event.correct) {
-    nextState.wrong_streak = 0;
-    if (
-      event.confidence === 'sure' &&
-      (event.difficulty === 'medium' || event.difficulty === 'hard')
-    ) {
-      nextState.clean_streak = state.clean_streak + 1;
-    } else {
-      nextState.clean_streak = 0;
-    }
-  } else {
-    nextState.wrong_streak = state.wrong_streak + 1;
-    if (event.confidence === 'sure') {
-      nextState.sure_wrong_count = state.sure_wrong_count + 1;
-      nextState.clean_streak = 0;
-    } else {
-      nextState.clean_streak = 0;
-    }
-  }
-
-  const finalState = updateStatus(nextState);
-  newMap.set(mapKey(event.student_id, event.concept_id), finalState);
-
-  // Mark question as processed for this student
-  processed.add(event.question_id);
-
-  // Loop flag
-  const loopFlag =
-    finalState.wrong_streak >= 2 ||
-    (event.confidence === 'sure' && finalState.sure_wrong_count >= CONFIG.sureWrongWeight);
-
-  // Root gap identification
-  const rootGap = findRootGap(event.student_id, event.concept_id, graph, newMap);
-
-  return { newStateMap: newMap, loopFlag, rootGap };
-}
-
-/**
- * Find prerequisite with lowest mastery (unseen counts as lowest).
- * If all prerequisites >= 0.8, returns "misconception on this concept itself".
- */
+/** Nearest weakest prerequisite (unseen counts as starting mastery). */
 function findRootGap(
   studentId: string,
   conceptId: string,
   graph: ConceptGraphItem[],
   stateMap: StudentStateMap
 ): string | null {
+  const byId = new Map(graph.map((c) => [c.id, c]));
   const ancestors: string[] = [];
   const seen = new Set<string>();
-  const queue: string[] = [];
-
-  const directDeps = graph.find((c) => c.id === conceptId)?.prerequisites ?? [];
-  for (const dep of directDeps) {
-    if (!seen.has(dep)) {
-      seen.add(dep);
-      queue.push(dep);
-      ancestors.push(dep);
-    }
-  }
+  const queue: string[] = [...(byId.get(conceptId)?.prerequisites ?? [])];
 
   while (queue.length > 0) {
-    const current = queue.shift()!;
-    const deps = graph.find((c) => c.id === current)?.prerequisites ?? [];
-    for (const dep of deps) {
-      if (!seen.has(dep)) {
-        seen.add(dep);
-        queue.push(dep);
-        ancestors.push(dep);
-      }
-    }
+    const cur = queue.shift()!;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    ancestors.push(cur);
+    queue.push(...(byId.get(cur)?.prerequisites ?? []));
   }
-
   if (ancestors.length === 0) return null;
 
-  let lowestConcept: string | null = null;
-  let lowestMastery = Infinity;
-  let anyBelowZeroEight = false;
-
+  let lowest: string | null = null;
+  let lowestP = Infinity;
+  let anyWeak = false;
   for (const anc of ancestors) {
-    const key = `${studentId}:${anc}`;
-    let mastery = Infinity;
-    const st = stateMap.get(key);
-    if (st) {
-      mastery = st.p_mastery;
-    } else {
-      mastery = CONFIG.startingPMastery;
+    const p = stateMap.get(mapKey(studentId, anc))?.p_mastery ?? CONFIG.startingPMastery;
+    if (p < lowestP) {
+      lowestP = p;
+      lowest = anc;
     }
-    if (mastery < lowestMastery) {
-      lowestMastery = mastery;
-      lowestConcept = anc;
-    }
-    if (mastery < 0.8) anyBelowZeroEight = true;
+    if (p < 0.8) anyWeak = true;
   }
-
-  if (!anyBelowZeroEight) return 'misconception on this concept itself';
-  return lowestConcept;
+  return anyWeak ? lowest : MISCONCEPTION_SELF;
 }
 
-/**
- * Alias retained for compatibility with tests.
- */
+/** One pure update per answer. Throws on missing confidence or unknown concept. */
+export function processAttempt(
+  studentStateMap: StudentStateMap,
+  event: AttemptEvent,
+  graph: ConceptGraphItem[]
+): ProcessResult {
+  if (!event.confidence) throw new Error('confidence is missing in attempt event');
+  if (!graph.some((c) => c.id === event.concept_id)) {
+    throw new Error(`Unknown concept ID: ${event.concept_id}`);
+  }
+
+  const key = mapKey(event.student_id, event.concept_id);
+  const prev = studentStateMap.get(key) ?? { ...INITIAL_STATE };
+
+  const guess = getGuess(event.difficulty, event.confidence);
+  const slip = getSlip(event.correct, event.confidence);
+  const posterior = bayesianUpdate(prev.p_mastery, event.correct, guess, slip);
+
+  // Very fast correct answers might be guesses: halve the gain.
+  const isFast = event.time_ms !== undefined && event.time_ms < 3000;
+  const nextP =
+    event.correct && isFast ? prev.p_mastery + (posterior - prev.p_mastery) * 0.5 : posterior;
+
+  const next: ConceptState = {
+    ...prev,
+    p_mastery: nextP,
+    attempts: prev.attempts + 1,
+    last_seen: event.timestamp,
+  };
+
+  let reason: string;
+  if (event.correct) {
+    next.wrong_streak = 0;
+    const clean =
+      event.confidence === 'sure' && (event.difficulty === 'medium' || event.difficulty === 'hard');
+    next.clean_streak = clean ? prev.clean_streak + 1 : 0;
+    reason = event.confidence === 'sure' ? 'correct and confident' : 'correct but unsure (shaky)';
+  } else {
+    next.wrong_streak = prev.wrong_streak + 1;
+    next.clean_streak = 0;
+    if (event.confidence === 'sure') {
+      next.sure_wrong_count = prev.sure_wrong_count + 1;
+      reason = 'misconception: wrong with high confidence';
+    } else {
+      reason = 'knowledge gap: wrong and unsure';
+    }
+  }
+
+  const finalState = updateStatus(next);
+  const newMap: StudentStateMap = new Map(studentStateMap);
+  newMap.set(key, finalState);
+
+  // Fires once per loop: on the 2nd wrong in a row, or the Nth confident wrong.
+  const loopFlag =
+    !event.correct &&
+    (finalState.wrong_streak === 2 ||
+      (event.confidence === 'sure' && finalState.sure_wrong_count === CONFIG.sureWrongWeight));
+
+  const rootGap = findRootGap(event.student_id, event.concept_id, graph, newMap);
+  return { newStateMap: newMap, loopFlag, rootGap, reason };
+}
+
 export const processAttemptInternal = processAttempt;
 
-/**
- * Suggest difficulty for next question.
- * Starts at medium. Steps up after 2 clean correct answers, steps down after 1 wrong answer.
- * Bounded within easy/medium/hard.
- */
-export function suggestDifficulty(
-  state: ConceptState,
-  currentDifficulty: 'easy' | 'medium' | 'hard'
-): 'easy' | 'medium' | 'hard' {
-  let difficulty = currentDifficulty;
+export function suggestDifficulty(state: ConceptState, current: Difficulty): Difficulty {
   if (state.clean_streak >= 2) {
-    if (difficulty === 'easy') difficulty = 'medium';
-    else if (difficulty === 'medium') difficulty = 'hard';
+    if (current === 'easy') return 'medium';
+    if (current === 'medium') return 'hard';
   } else if (state.wrong_streak >= 1) {
-    if (difficulty === 'hard') difficulty = 'medium';
-    else if (difficulty === 'medium') difficulty = 'easy';
+    if (current === 'hard') return 'medium';
+    if (current === 'medium') return 'easy';
   }
-  return difficulty;
+  return current;
 }
 
-/**
- * Compile overall concept breakdown, tracking priority (misconception > gap).
- * Outputs retake array of { concept, prerequisite, chapter }.
- * Quizzes with <10 total questions flagged as "early estimate".
- */
 export function getReport(
   studentStateMap: StudentStateMap,
   graph: ConceptGraphItem[],
-  totalQuestionsAttempted: number
+  totalQuestionsAttempted: number,
+  studentId?: string,
+  chapter = 'Electricity'
 ): ReportResult {
-  const conceptBreakdown = new Map<string, ConceptState>(studentStateMap);
-
-  let priority: 'misconception' | 'gap' | null = null;
-  for (const state of conceptBreakdown.values()) {
-    if (state.sure_wrong_count > 0) {
-      priority = 'misconception';
-      break;
-    }
-    if (state.wrong_streak >= 2 && priority !== 'misconception') {
-      priority = 'gap';
-    }
-  }
-
+  const conceptBreakdown = new Map<string, ConceptState>();
   const retake: ReportItem[] = [];
-  const earlyEstimate = totalQuestionsAttempted < 10;
+  let hasMisconception = false;
+  let hasWeak = false;
 
-  for (const [key, state] of conceptBreakdown.entries()) {
-    const [studentId, conceptId] = key.split(':');
-    if (!studentId || !conceptId) continue;
-    if (
-      state.status === 'weak' ||
-      state.status === 'shaky' ||
-      state.sure_wrong_count > 0 ||
-      state.wrong_streak >= 2
-    ) {
-      const chapter = graph.find((c) => c.id === conceptId)?.name ?? 'Unknown';
-      const prerequisite = findRootGap(studentId, conceptId, graph, conceptBreakdown);
-      retake.push({ concept: conceptId, prerequisite: prerequisite ?? null, chapter });
+  for (const [key, state] of studentStateMap.entries()) {
+    const idx = key.indexOf(':');
+    const sid = key.slice(0, idx);
+    const cid = key.slice(idx + 1);
+    if (studentId && sid !== studentId) continue;
+
+    conceptBreakdown.set(cid, state);
+    if (state.status === 'weak') hasWeak = true;
+
+    if (state.status === 'weak' || state.status === 'shaky') {
+      if (state.sure_wrong_count > 0) hasMisconception = true;
+      const gap = findRootGap(sid, cid, graph, studentStateMap);
+      retake.push({
+        concept: cid,
+        prerequisite: gap && gap !== MISCONCEPTION_SELF ? gap : null,
+        chapter,
+      });
     }
   }
 
-  return { conceptBreakdown, priority, retake, earlyEstimate };
+  // Misconceptions first, then lowest mastery first.
+  retake.sort((a, b) => {
+    const sa = conceptBreakdown.get(a.concept)!;
+    const sb = conceptBreakdown.get(b.concept)!;
+    const ma = sa.sure_wrong_count > 0 ? 0 : 1;
+    const mb = sb.sure_wrong_count > 0 ? 0 : 1;
+    if (ma !== mb) return ma - mb;
+    return sa.p_mastery - sb.p_mastery;
+  });
+
+  return {
+    conceptBreakdown,
+    priority: hasMisconception ? 'misconception' : hasWeak ? 'gap' : null,
+    retake,
+    earlyEstimate: totalQuestionsAttempted < 10,
+  };
 }
