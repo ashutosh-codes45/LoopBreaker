@@ -1,0 +1,146 @@
+[
+  {
+    "id": "electric_charge",
+    "name": "Electric Charge",
+    "description": "Electric charge is the fundamental property of matter that causes it to experience a force in an electromagnetic field.",
+    "prerequisites": []
+  },
+  {
+    "id": "electric_current",
+    "name": "Electric Current",
+    "description": "Electric current is the flow of electric charge through a conductor, measured in amperes.",
+    "prerequisites": ["electric_charge"]
+  },
+  {
+    "id": "electric_potential",
+    "name": "Electric Potential (Voltage)",
+    "description": "Electric potential is the amount of electric potential energy per unit charge at a point in an electric field.",
+    "prerequisites": ["electric_charge"]
+  },
+  {
+    "id": "ohms_law",
+    "name": "Ohm's Law",
+    "description": "Ohm's Law states that the current through a conductor is directly proportional to the voltage across it.",
+    "prerequisites": ["electric_current", "electric_potential"]
+  },
+  {
+    "id": "resistance",
+    "name": "Electrical Resistance",
+    "description": "Electrical resistance is the opposition to the flow of electric current, measured in ohms.",
+    "prerequisites": ["electric_current"]
+  },
+  {
+    "id": "resistivity",
+    "name": "Electrical Resistivity",
+    "description": "Electrical resistivity is a material's inherent resistance to electric current flow, independent of shape and size.",
+    "prerequisites": ["resistance"]
+  },
+  {
+    "id": "series_resistors",
+    "name": "Series Resistors",
+    "description": "Series resistors are connected end-to-end, causing the same current to flow through each resistor.",
+    "prerequisites": ["resistance", "ohms_law"]
+  },
+  {
+    "id": "parallel_resistors",
+    "name": "Parallel Resistors",
+    "description": "Parallel resistors are connected across the same two points, causing the voltage across each to be the same.",
+    "prerequisites": ["resistance", "ohms_law"]
+  },
+  {
+    "id": "voltage_divider",
+    "name": "Voltage Divider",
+    "description": "A voltage divider is a circuit that divides the input voltage proportionally using resistors.",
+    "prerequisites": ["series_resistors", "ohms_law"]
+  },
+  {
+    "id": "current_divider",
+    "name": "Current Divider",
+    "description": "A current divider is a circuit that divides the input current proportionally using parallel resistors.",
+    "prerequisites": ["parallel_resistors", "ohms_law"]
+  },
+  {
+    "id": "power_resistor",
+    "name": "Electrical Power in Resistors",
+    "description": "Electrical power in resistors is the rate at which electrical energy is converted to heat, measured in watts.",
+    "prerequisites": ["resistance", "ohms_law"]
+  },
+  {
+    "id": "energy_resistor",
+    "name": "Electrical Energy in Resistors",
+    "description": "Electrical energy in resistors is the total electrical work done over time, measured in joules.",
+    "prerequisites": ["power_resistor"]
+  },
+  {
+    "id": "kirchhoffs_current_law",
+    "name": "Kirchhoff's Current Law",
+    "description": "Kirchhoff's Current Law states that the sum of currents entering a junction equals the sum of currents leaving it.",
+    "prerequisites": ["electric_current", "parallel_resistors"]
+  },
+  {
+    "id": "kirchhoffs_voltage_law",
+    "name": "Kirchhoff's Voltage Law",
+    "description": "Kirchhoff's Voltage Law states that the sum of voltage drops around a closed loop equals the sum of voltage sources.",
+    "prerequisites": ["voltage_divider", "ohms_law"]
+  },
+  {
+    "id": "rlc_circuits",
+    "name": "RLC Circuits",
+    "description": "RLC circuits contain resistors, inductors, and capacitors, creating complex AC circuit behavior.",
+    "prerequisites": ["kirchhoffs_current_law", "kirchhoffs_voltage_law", "resistance"]
+  },
+  {
+    "id": "electrical_power",
+    "name": "Electrical Power",
+    "description": "Electrical power is the rate of electrical energy transfer, calculated as voltage times current.",
+    "prerequisites": ["voltage_divider", "electric_current"]
+  },
+  {
+    "id": "complex_network_analysis",
+    "name": "Complex Network Analysis",
+    "description": "Complex network analysis is the systematic method of solving intricate electrical circuits using multiple techniques.",
+    "prerequisites": ["rlc_circuits", "kirchhoffs_current_law", "kirchhoffs_voltage_law"]
+  },
+  {
+    "id": "impedance",
+    "name": "Electrical Impedance",
+    "description": "Electrical impedance is the total opposition to alternating current flow, combining resistance and reactance.",
+    "prerequisites": ["complex_network_analysis", "ohms_law"]
+  },
+  {
+    "id": "reactance",
+    "name": "Electrical Reactance",
+    "description": "Electrical reactance is the opposition to alternating current caused by inductors and capacitors.",
+    "prerequisites": ["impedance", "rlc_circuits"]
+  },
+  {
+    "id": "resonance",
+    "name": "Electrical Resonance",
+    "description": "Electrical resonance occurs when inductive and capacitive reactances are equal, maximizing circuit response.",
+    "prerequisites": ["reactance", "impedance"]
+  },
+  {
+    "id": "transformer_principle",
+    "name": "Transformer Principle",
+    "description": "Transformers operate on electromagnetic induction to transfer electrical energy between circuits.",
+    "prerequisites": ["complex_network_analysis", "electrical_power"]
+  },
+  {
+    "id": "electrical_generation",
+    "name": "Electrical Generation",
+    "description": "Electrical generation is the process of producing electrical energy from mechanical energy.",
+    "prerequisites": ["electrical_power", "complex_network_analysis"]
+  },
+  {
+    "id": "electrical_distribution",
+    "name": "Electrical Distribution",
+    "description": "Electrical distribution is the transmission of electrical power from generation plants to consumers.",
+    "prerequisites": ["electrical_generation"]
+  },
+  {
+    "id": "safety_procedures",
+    "name": "Electrical Safety Procedures",
+    "description": "Electrical safety procedures prevent accidents and injuries when working with electrical systems and equipment.",
+    "prerequisites": ["electrical_distribution", "complex_network_analysis"]
+  }
+]

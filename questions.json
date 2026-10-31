@@ -1,0 +1,326 @@
+[
+  {
+    "id": "q_electric_charge_01",
+    "concept_id": "electric_charge",
+    "difficulty": "easy",
+    "question_text": "Which of the following best describes electric charge?",
+    "options": {
+      "A": "The force experienced by a mass in a gravitational field",
+      "B": "The fundamental property of matter that causes it to experience a force in an electromagnetic field",
+      "C": "The rate at which electric charge flows through a conductor",
+      "D": "The amount of electric potential energy per unit charge"
+    },
+    "correct_option": "B",
+    "misconceptions": {
+      "A": "Confusing electric charge with gravitational force",
+      "C": "Confusing charge definition with electric current definition",
+      "D": "Confusing charge definition with electric potential definition"
+    }
+  },
+  {
+    "id": "q_electric_current_01",
+    "concept_id": "electric_current",
+    "difficulty": "easy",
+    "question_text": "What is the unit of electric current?",
+    "options": {
+      "A": "Volts",
+      "B": "Ohms",
+      "C": "Amperes",
+      "D": "Joules"
+    },
+    "correct_option": "C",
+    "misconceptions": {
+      "A": "Confusing current units with voltage units",
+      "B": "Confusing current units with resistance units",
+      "D": "Confusing current units with energy units"
+    }
+  },
+  {
+    "id": "q_electric_potential_01",
+    "concept_id": "electric_potential",
+    "difficulty": "medium",
+    "question_text": "What does electric potential (voltage) measure?",
+    "options": {
+      "A": "The rate of charge flow",
+      "B": "The total amount of electric charge in a circuit",
+      "C": "The amount of electric potential energy per unit charge",
+      "D": "The opposition to current flow"
+    },
+    "correct_option": "C",
+    "misconceptions": {
+      "A": "Confusing voltage with current",
+      "B": "Confusing voltage with total charge",
+      "D": "Confusing voltage with resistance"
+    }
+  },
+  {
+    "id": "q_ohms_law_01",
+    "concept_id": "ohms_law",
+    "difficulty": "easy",
+    "question_text": "According to Ohm's Law, what is the relationship between current and voltage?",
+    "options": {
+      "A": "Current is inversely proportional to voltage",
+      "B": "Current is directly proportional to voltage",
+      "C": "Current is independent of voltage",
+      "D": "Current is squared proportional to voltage"
+    },
+    "correct_option": "B",
+    "misconceptions": {
+      "A": "Confusing Ohm's Law proportionality direction",
+      "C": "Ignoring Ohm's Law relationship",
+      "D": "Misapplying power law relationship to Ohm's Law"
+    }
+  },
+  {
+    "id": "q_ohms_law_02",
+    "concept_id": "ohms_law",
+    "difficulty": "medium",
+    "question_text": "If a 100 ohm resistor is connected to a 12V battery, what current flows through it?",
+    "options": {
+      "A": "0.12 A",
+      "B": "120 A",
+      "C": "12 A",
+      "D": "0.012 A"
+    },
+    "correct_option": "A",
+    "misconceptions": {
+      "B": "Forgetting to divide when calculating current",
+      "C": "Misplacing decimal point",
+      "D": "Forgetting to remove leading zero"
+    }
+  },
+  {
+    "id": "q_resistance_01",
+    "concept_id": "resistance",
+    "difficulty": "easy",
+    "question_text": "What is the definition of electrical resistance?",
+    "options": {
+      "A": "The flow of electric charge",
+      "B": "The opposition to the flow of electric current",
+      "C": "The rate of electrical energy transfer",
+      "D": "The amount of electric charge stored"
+    },
+    "correct_option": "B",
+    "misconceptions": {
+      "A": "Confusing resistance with current",
+      "C": "Confusing resistance with power",
+      "D": "Confusing resistance with capacitance"
+    }
+  },
+  {
+    "id": "q_series_resistors_01",
+    "concept_id": "series_resistors",
+    "difficulty": "easy",
+    "question_text": "What happens to current in a series circuit with multiple resistors?",
+    "options": {
+      "A": "Current varies at different points",
+      "B": "Current decreases as resistors are added",
+      "C": "Current is the same at all points",
+      "D": "Current flows only through the largest resistor"
+    },
+    "correct_option": "C",
+    "misconceptions": {
+      "A": "Confusing with parallel circuit rules",
+      "B": "Confusing with power dissipation",
+      "D": "Confusing with resistance distribution"
+    }
+  },
+  {
+    "id": "q_parallel_resistors_01",
+    "concept_id": "parallel_resistors",
+    "difficulty": "easy",
+    "question_text": "What happens to voltage in a parallel circuit with multiple resistors?",
+    "options": {
+      "A": "Voltage varies across resistors",
+      "B": "Voltage decreases as resistors are added",
+      "C": "Voltage is the same across all points",
+      "D": "Voltage flows through all resistors equally"
+    },
+    "correct_option": "C",
+    "misconceptions": {
+      "A": "Confusing with series circuit rules",
+      "B": "Confusing with current division",
+      "D": "Confusing with current flow description"
+    }
+  },
+  {
+    "id": "q_voltage_divider_01",
+    "concept_id": "voltage_divider",
+    "difficulty": "medium",
+    "question_text": "In a voltage divider circuit with two equal resistors and 10V input, what is the output voltage?",
+    "options": {
+      "A": "20V",
+      "B": "10V",
+      "C": "5V",
+      "D": "0V"
+    },
+    "correct_option": "C",
+    "misconceptions": {
+      "A": "Adding voltages instead of dividing",
+      "B": "Ignoring voltage division",
+      "D": "Assuming complete blockage"
+    }
+  },
+  {
+    "id": "q_power_resistor_01",
+    "concept_id": "power_resistor",
+    "difficulty": "medium",
+    "question_text": "What is the power dissipated by a 10 ohm resistor when 2A flows through it?",
+    "options": {
+      "A": "4W",
+      "B": "20W",
+      "C": "40W",
+      "D": "100W"
+    },
+    "correct_option": "C",
+    "misconceptions": {
+      "A": "Using V = IR instead of P = I²R",
+      "B": "Using wrong power formula",
+      "D": "Confusing with voltage calculation"
+    }
+  },
+  {
+    "id": "q_kirchhoffs_current_law_01",
+    "concept_id": "kirchhoffs_current_law",
+    "difficulty": "hard",
+    "question_text": "In a junction, if 3A flows in and 2A flows out through one branch, what flows out through the second branch?",
+    "options": {
+      "A": "0.5A",
+      "B": "1A",
+      "C": "5A",
+      "D": "1.5A"
+    },
+    "correct_option": "D",
+    "misconceptions": {
+      "A": "Confusing with average calculation",
+      "B": "Misreading problem",
+      "C": "Adding instead of subtracting currents"
+    }
+  },
+  {
+    "id": "q_kirchhoffs_voltage_law_01",
+    "concept_id": "kirchhoffs_voltage_law",
+    "difficulty": "hard",
+    "question_text": "In a closed loop with a 9V battery and two resistors (3V drop across first, 4V across second), what is the voltage drop across the third resistor?",
+    "options": {
+      "A": "2V",
+      "B": "-2V",
+      "C": "16V",
+      "D": "0V"
+    },
+    "correct_option": "A",
+    "misconceptions": {
+      "B": "Misunderstanding voltage drop polarity",
+      "C": "Adding instead of subtracting",
+      "D": "Assuming all voltage used up"
+    }
+  },
+  {
+    "id": "q_electrical_power_01",
+    "concept_id": "electrical_power",
+    "difficulty": "medium",
+    "question_text": "What is the electrical power in a circuit with 12V and 3A?",
+    "options": {
+      "A": "4W",
+      "B": "36W",
+      "C": "15W",
+      "D": "9W"
+    },
+    "correct_option": "B",
+    "misconceptions": {
+      "A": "Dividing instead of multiplying",
+      "C": "Using wrong formula",
+      "D": "Using subtraction instead of multiplication"
+    }
+  },
+  {
+    "id": "q_resistivity_01",
+    "concept_id": "resistivity",
+    "difficulty": "hard",
+    "question_text": "What happens to resistance when a conductor's length is doubled while keeping volume constant?",
+    "options": {
+      "A": "Resistance is halved",
+      "B": "Resistance remains the same",
+      "C": "Resistance doubles",
+      "D": "Resistance quadruples"
+    },
+    "correct_option": "C",
+    "misconceptions": {
+      "A": "Inverting the relationship",
+      "B": "Assuming constant resistivity",
+      "D": "Over-applying geometric effects"
+    }
+  },
+  {
+    "id": "q_current_divider_01",
+    "concept_id": "current_divider",
+    "difficulty": "medium",
+    "question_text": "In a parallel circuit with two equal resistors, if total current is 6A, what is the current through each resistor?",
+    "options": {
+      "A": "3A",
+      "B": "6A",
+      "C": "12A",
+      "D": "0A"
+    },
+    "correct_option": "A",
+    "misconceptions": {
+      "B": "Confusing with total current",
+      "C": "Doubling instead of dividing",
+      "D": "Assuming complete blockage"
+    }
+  },
+  {
+    "id": "q_energy_resistor_01",
+    "concept_id": "energy_resistor",
+    "difficulty": "medium",
+    "question_text": "How much energy is dissipated by a resistor if 5W of power is used for 10 seconds?",
+    "options": {
+      "A": "2J",
+      "B": "50J",
+      "C": "0.5J",
+      "D": "500J"
+    },
+    "correct_option": "B",
+    "misconceptions": {
+      "A": "Dividing instead of multiplying",
+      "C": "Misplacing decimal point",
+      "D": "Forgetting decimal placement"
+    }
+  },
+  {
+    "id": "q_electrical_generation_01",
+    "concept_id": "electrical_generation",
+    "difficulty": "hard",
+    "question_text": "Which energy source converts mechanical energy into electrical energy most directly?",
+    "options": {
+      "A": "Solar panel",
+      "B": "Wind turbine",
+      "C": "Hydroelectric dam",
+      "D": "Nuclear power plant"
+    },
+    "correct_option": "C",
+    "misconceptions": {
+      "A": "Confusing solar with mechanical conversion",
+      "B": "Confusing wind turbine principle",
+      "D": "Overlooking nuclear conversion steps"
+    }
+  },
+  {
+    "id": "q_safety_procedures_01",
+    "concept_id": "safety_procedures",
+    "difficulty": "hard",
+    "question_text": "Which safety procedure is MOST important when working with electrical circuits?",
+    "options": {
+      "A": "Using proper tools",
+      "B": "Testing for voltage presence",
+      "C": "Working with one hand",
+      "D": "Using insulation"
+    },
+    "correct_option": "B",
+    "misconceptions": {
+      "A": "Over-focusing on tools",
+      "C": "Misunderstanding shock prevention",
+      "D": "Confusing with insulation importance"
+    }
+  }
+]
