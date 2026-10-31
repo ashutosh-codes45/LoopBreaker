@@ -23,10 +23,10 @@ interface QuizState {
   chapter: string;
   quizLength: 5 | 10 | 15;
   setQuizLength: (len: 5 | 10 | 15) => void;
-  setChapter: (chapter: string) => void;
+  setChapter: (chapter) => void;
 
   // Lifecycle
-  view: 'setup' | 'quiz' | 'deepDive';
+  view: 'setup' | 'quiz' | 'deepDive' | 'loopBreak';
   startQuiz: () => void;
   resetQuiz: () => void;
 
@@ -48,7 +48,61 @@ interface QuizState {
   loopFlag: boolean;
   rootGap: string | null;
   isDeepDive: boolean;
+  isLoopBreak: boolean;
+  strugglePoints: Array<{
+    conceptId: string;
+    rootGapConcept: string | null;
+    reason: string;
+    timeSpentMs: number;
+    timestamp: number;
+    studentId: string;
+  }>;
   submitAnswer: () => void;
+  recordStrugglePoint: (reason: string, timeSpentMs?: number) => void;
+  completeLoopBreak: () => void;
+}
+
+/**
+ * Maps option letters to human-friendly misconception descriptions
+ * based on the misconceptions stored in questions.json
+ */
+function getMisconceptionReasons(
+  conceptId: string,
+  selectedOption: string
+): Array<{ label: string; value: string }> {
+  const sourceQuestion = questionsData.find(
+    (q: any) => q.concept_id === conceptId
+  );
+  if (!sourceQuestion?.misconceptions) {
+    return [
+      { label: 'Calculation error', value: 'Calculation error' },
+      { label: 'Misunderstood formula', value: 'Misunderstood formula' },
+      { label: 'Confused terms', value: 'Confused terms' },
+      { label: 'Other', value: 'Other' },
+    ];
+  }
+
+  const optionMisconceptions = sourceQuestion.misconceptions;
+  const reason = optionMisconceptions[selectedOption as keyof typeof optionMisconceptions];
+
+  if (reason) {
+    // Return the specific misconception plus fallback options
+    return [
+      { label: reason, value: reason },
+      { label: 'Calculation error', value: 'Calculation error' },
+      { label: 'Misunderstood formula', value: 'Misunderstood formula' },
+      { label: 'Confused terms', value: 'Confused terms' },
+      { label: 'Other', value: 'Other' },
+    ];
+  }
+
+  // Generic fallbacks
+  return [
+    { label: 'Calculation error', value: 'Calculation error' },
+    { label: 'Misunderstood formula', value: 'Misunderstood formula' },
+    { label: 'Confused terms', value: 'Confused terms' },
+    { label: 'Other', value: 'Other' },
+  ];
 }
 
 const initialStudentId = 'student-1';
@@ -77,6 +131,8 @@ export const useQuizStore = create<QuizState>((set, get) => ({
       loopFlag: false,
       rootGap: null,
       isDeepDive: false,
+      isLoopBreak: false,
+      strugglePoints: [],
     });
   },
   resetQuiz: () => {
@@ -92,6 +148,8 @@ export const useQuizStore = create<QuizState>((set, get) => ({
       loopFlag: false,
       rootGap: null,
       isDeepDive: false,
+      isLoopBreak: false,
+      strugglePoints: [],
     });
   },
 
@@ -114,6 +172,8 @@ export const useQuizStore = create<QuizState>((set, get) => ({
   loopFlag: false,
   rootGap: null,
   isDeepDive: false,
+  isLoopBreak: false,
+  strugglePoints: [],
   submitAnswer: () => {
     const {
       studentStates,
@@ -122,6 +182,9 @@ export const useQuizStore = create<QuizState>((set, get) => ({
       currentDifficulty,
       selectedAnswer,
       selectedConfidence,
+      loopFlag,
+      isLoopBreak,
+      strugglePoints,
     } = get();
 
     if (!selectedAnswer || !selectedConfidence) return;
@@ -132,22 +195,18 @@ export const useQuizStore = create<QuizState>((set, get) => ({
       question_id: currentQuestion.id,
       concept_id: currentQuestion.concept_id,
       difficulty: currentDifficulty,
-      correct: selectedAnswer === 'A', // placeholder; real correctness checked below
+      correct: selectedAnswer === 'A', // placeholder
       confidence: selectedConfidence,
       timestamp: Date.now(),
     };
 
-    // Determine correctness from the question data. Since questions.json doesn't
-    // carry correct_option in the runtime type, we rely on the engine's schema.
-    // For this UI we treat the selected option letter as the answer and compare
-    // against the stored correct_option from the JSON source.
+    // Determine correctness from the question data
     const sourceQuestion = questionsData.find(
       (q: any) => q.id === currentQuestion.id
     );
     event.correct = selectedAnswer === (sourceQuestion?.correct_option ?? 'A');
 
     const stateMap: Record<string, ConceptState> = studentStates;
-    // Convert record to Map for engine
     const map = new Map<string, ConceptState>();
     for (const [k, v] of Object.entries(stateMap)) {
       map.set(k, v);
@@ -155,6 +214,40 @@ export const useQuizStore = create<QuizState>((set, get) => ({
 
     const result = processAttempt(map, event, conceptGraph);
 
+    // *** LOOP BREAKER INTEGRATION ***
+    // Check if a loop was triggered
+    const newLoopFlag = result.loopFlag || isLoopBreak;
+    const newStrugglePoints = [...strugglePoints];
+
+    if (newLoopFlag && !isLoopBreak) {
+      // Enter loop break mode - pause the quiz length counter
+      // The questions answered during loop break won't count toward quiz length
+      set({
+        loopFlag: newLoopFlag,
+        rootGap: result.rootGap,
+        isLoopBreak: true,
+        isDeepDive: false,
+        // Keep current selections but mark as in-loop-break
+        selectedAnswer: selectedAnswer,
+        selectedConfidence: selectedConfidence,
+      });
+
+      // Record a struggle point immediately upon loop entry
+      const misconceptionReasons = getMisconceptionReasons(
+        currentQuestion.concept_id,
+        selectedAnswer
+      );
+      newStrugglePoints.push({
+        conceptId: currentQuestion.concept_id,
+        rootGapConcept: result.rootGap,
+        reason: misconceptionReasons[0]?.label || 'Misunderstood formula',
+        timeSpentMs: 0, // Will be updated when loop break completes
+        timestamp: Date.now(),
+        studentId: initialStudentId,
+      });
+    }
+
+    // Update student states from engine
     const newStudentStates: Record<string, ConceptState> = {};
     result.newStateMap.forEach((v, k) => {
       newStudentStates[k] = v;
@@ -167,22 +260,51 @@ export const useQuizStore = create<QuizState>((set, get) => ({
 
     set({
       studentStates: newStudentStates,
-      loopFlag: result.loopFlag,
+      loopFlag: newLoopFlag,
       rootGap: result.rootGap,
-      isDeepDive: !!result.rootGap,
       currentDifficulty: nextDifficulty,
     });
 
-    // Advance to next question
-    const nextIndex = currentQuestionIndex + 1;
+    // If we're in loop break mode, stay on same question, don't advance
+    let nextIndex = currentQuestionIndex;
+    if (!isLoopBreak && !newLoopFlag) {
+      // Normal advancement
+      nextIndex = currentQuestionIndex + 1;
+    }
+    // If loopBreak is true, we stay on the same question index
+
     if (nextIndex < questions.length) {
       set({
         currentQuestionIndex: nextIndex,
         selectedAnswer: null,
         selectedConfidence: null,
+        // isLoopBreak remains true until completedLoopBreak is called
       });
-    } else {
+    } else if (nextIndex >= questions.length && !isLoopBreak) {
       set({ view: 'deepDive' });
     }
+    // If loopBreak and at end, stay in loopBreak view
+
+    return { newStateMap: map, loopFlag: newLoopFlag, rootGap: result.rootGap };
   },
+
+  // *** RECORD STRUGGLE POINT ***
+  recordStrugglePoint: (reason: string, timeSpentMs?: number) =>
+    set((state) => {
+      const newStrugglePoints = [...state.strugglePoints, {
+        conceptId: state.rootGap || 'unknown',
+        rootGapConcept: state.rootGap,
+        reason,
+        timeSpentMs: timeSpentMs || 0,
+        timestamp: Date.now(),
+        studentId: initialStudentId,
+      }];
+      return { strugglePoints: newStrugglePoints };
+    }),
+
+  // *** COMPLETE LOOP BREAK ***
+  completeLoopBreak: () => set({ isLoopBreak: false, loopFlag: false }),
+
+  // Deep dive
+  isDeepDive: false,
 }));
